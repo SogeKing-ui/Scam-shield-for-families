@@ -1,8 +1,12 @@
 #include "explainer.hpp"
 
 #include <cstdlib>
+#include <ctime>
 #include <iostream>
+#include <mutex>
+#include <unordered_map>
 
+#include "crypto.hpp"
 #include "httplib.h"
 #include "json.hpp"
 #include "redact.hpp"
@@ -30,6 +34,22 @@ std::string clip(std::string s, std::size_t max) {
     while (!s.empty() && (static_cast<unsigned char>(s.back()) & 0xC0) == 0x80) s.pop_back();
     if (!s.empty() && static_cast<unsigned char>(s.back()) >= 0xC0) s.pop_back();
     return s;
+}
+
+// Small in-memory cache of AI answers, keyed by a hash of (language + redacted message), so the same
+// scam text sent many times costs one API call. Holds only the answer text, never the message.
+struct CacheEntry {
+    std::string text;
+    std::string model;
+    long long storedAt;
+};
+constexpr std::size_t kCacheMax = 500;
+constexpr long long kCacheTtlSeconds = 24 * 3600;
+std::mutex cacheMu;
+std::unordered_map<std::string, CacheEntry> cache;
+
+std::string cacheKey(const std::string& message, const std::string& lang) {
+    return crypto::sha256Hex(lang + "\n" + redact(message));
 }
 
 // Returns empty string on any failure. Never logs the key or the message.
@@ -109,7 +129,8 @@ std::string buildUserPrompt(const Result& result, const std::string& message, co
         p += "Warning signs found by the checker:\n";
         for (const Signal& s : result.signals) p += "- " + s.title + ": " + s.explanation + "\n";
     }
-    p += "\nThe message (private details already removed):\n<message>\n" + redact(message) + "\n</message>\n";
+    p += "\nThe message (private details already removed):\n<message>\n" + clip(redact(message), 2000) +
+         "\n</message>\n";
     return p;
 }
 
@@ -139,6 +160,22 @@ std::string builtinExplanation(const Result& result) {
     return out;
 }
 
+std::optional<Explanation> cachedExplanation(const std::string& message, const std::string& lang) {
+    const std::string key = cacheKey(message, lang);
+    std::lock_guard<std::mutex> lock(cacheMu);
+    auto it = cache.find(key);
+    if (it == cache.end()) return std::nullopt;
+    if (static_cast<long long>(std::time(nullptr)) - it->second.storedAt > kCacheTtlSeconds) {
+        cache.erase(it);
+        return std::nullopt;
+    }
+    Explanation ex;
+    ex.text = it->second.text;
+    ex.source = "claude";
+    ex.model = it->second.model;
+    return ex;
+}
+
 Explanation explain(const ExplainerConfig& config, const std::string& message, const std::string& lang) {
     const Result result = analyze(message);
     Explanation ex;
@@ -156,6 +193,9 @@ Explanation explain(const ExplainerConfig& config, const std::string& message, c
             ex.text = clip(reply, 2000);
             ex.source = "claude";
             ex.model = config.model;
+            std::lock_guard<std::mutex> lock(cacheMu);
+            if (cache.size() >= kCacheMax) cache.clear();
+            cache[cacheKey(message, lang)] = {ex.text, ex.model, static_cast<long long>(std::time(nullptr))};
             return ex;
         }
         ex.text = builtinExplanation(result);

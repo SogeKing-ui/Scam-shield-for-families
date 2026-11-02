@@ -4,6 +4,7 @@
 // Without a key (or if the call fails) a built-in English explanation is used.
 #pragma once
 
+#include <optional>
 #include <string>
 
 #include "analyzer.hpp"
@@ -33,5 +34,8 @@ std::string buildUserPrompt(const Result& result, const std::string& message, co
 std::string builtinExplanation(const Result& result);
 
 Explanation explain(const ExplainerConfig& config, const std::string& message, const std::string& lang);
+
+// Earlier AI answer for the same (redacted) message and language, if any. Free: no API call, no quota.
+std::optional<Explanation> cachedExplanation(const std::string& message, const std::string& lang);
 
 }  // namespace scamshield

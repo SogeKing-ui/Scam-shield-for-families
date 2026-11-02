@@ -22,3 +22,9 @@ frontend/dist/
 # Downloaded research datasets (licenses vary; do not commit)
 data/*
 !data/README.md
+
+# Local account database and its encryption key (never commit)
+*.db
+*.db-wal
+*.db-shm
+*.db.key
