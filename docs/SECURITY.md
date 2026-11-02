@@ -40,15 +40,16 @@ Scam Shield handles messages that may contain names, account numbers, and other 
 - Encryption at rest: shared messages are encrypted with AES-256-GCM before they reach the database. The test suite checks that message text and passwords never appear in the database file. The database and key files are created owner-only.
 - Privacy controls: nothing is shared without a button press; removing a link deletes what was shared over it; deleting an account removes the user, sessions, links, and shared messages.
 - Password reset: the emailed link holds a 256-bit random token; only its SHA-256 is stored. It works once (the database row is deleted when it is used, even if two requests race), expires after 30 minutes, and a new request replaces any older link. The link puts the token after `#`, so it never reaches server logs or Referer headers, and the web app removes it from the address bar. A successful reset signs the account out everywhere and clears any sign-in lockout. The "forgot" answer is identical for known and unknown emails, requests are limited to 5 per minute per address and 3 per hour per email (so nobody can flood an inbox), and the email is sent on a background thread so timing does not reveal whether an account exists. A weak new password is rejected without using up the link. In dev mode (no mail provider) the link is printed to the server console only.
+- Email confirmation: sign-up emails a single-use link (256-bit token, SHA-256 stored, 24-hour expiry, a new request replaces the old one, 3 per hour per account). Until confirmed, an account cannot use AI explanations or create/accept family invites. Opening a password-reset link also confirms the address. The token travels after `#` like the reset token. Old databases are migrated in place and their accounts are treated as confirmed.
 - All database access uses bound parameters (no SQL injection).
 
 ## To do before real users
 
 - [ ] HTTPS everywhere (reverse proxy such as Caddy or nginx in front of the server).
 - [ ] Consider Argon2id instead of scrypt and a password-breach check at sign-up.
-- [x] Password reset by email (done). [ ] Email verification at sign-up: nobody confirms they own an address, so a reset email can reach a typo'd or someone else's address. Add verification before real users.
+- [x] Password reset by email (done). [x] Email confirmation at sign-up (done). Still open: someone can register another person's address first (account squatting); consider letting a confirmed owner take over an unconfirmed account, and deleting unconfirmed accounts after some days.
 - [ ] Password reset trusts the email inbox: anyone who controls the inbox controls the account. Consider notifying linked helpers, and an "your password was changed" email, once mail is set up.
-- [ ] Reset emails are English only; add Spanish and Haitian Creole.
+- [x] Account emails in Spanish and Haitian Creole (done; needs native-speaker review). Backend error messages are English and are translated in the browser by an exact-text table in `frontend/src/i18n.js`; switch to error codes before adding more languages.
 - [ ] Lockout is per email, so someone could deliberately lock another person out for 15 minutes; add CAPTCHA or progressive delays.
 - [ ] Keep the data key in a secrets manager, not in a file next to the database; support key rotation.
 - [ ] Audit log of sign-ins and sharing events (without message text).

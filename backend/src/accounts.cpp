@@ -149,7 +149,7 @@ std::string passwordProblem(const std::string& email, const std::string& passwor
 }
 
 json userJson(const User& u) {
-    return {{"id", u.id}, {"email", u.email}, {"displayName", u.displayName}, {"role", u.role}};
+    return {{"id", u.id}, {"email", u.email}, {"displayName", u.displayName}, {"role", u.role}, {"verified", u.verified}};
 }
 
 std::string sessionToken(const Request& req) {
@@ -191,6 +191,13 @@ std::optional<User> requireUser(State& st, const Request& req, Response& res, co
     return user;
 }
 
+// Linking and AI use need a confirmed email address, so one person cannot spread fake accounts around.
+bool requireVerified(const User& user, Response& res) {
+    if (user.verified) return true;
+    http::sendError(res, 403, "Please confirm your email first. We sent you a link when you signed up.");
+    return false;
+}
+
 bool parseId(const std::string& s, std::int64_t* out) {
     if (s.empty() || s.size() > 15) return false;
     *out = std::stoll(s);
@@ -222,6 +229,7 @@ void registerAccountRoutes(httplib::Server& svr, Store& store, const AccountsCon
         }
         auto user = st->store.createUser(email, name, role, password);
         if (!user) return http::sendError(res, 400, "Could not create that account. Try a different email, or sign in.");
+        deliverEmailVerification(st->cfg.mail, *user, st->store.createEmailVerification(user->id), str(body, "lang"));
         setSessionCookie(*st, res, st->store.createSession(user->id));
         res.status = 201;
         res.set_content(json{{"user", userJson(*user)}}.dump(), "application/json");
@@ -257,7 +265,7 @@ void registerAccountRoutes(httplib::Server& svr, Store& store, const AccountsCon
         if (!validEmail(email)) return http::sendError(res, 400, "Please enter a valid email address.");
         if (st->allowHourly("reset:" + email, 3)) {
             if (auto reset = st->store.createPasswordReset(email)) {
-                deliverPasswordReset(st->cfg.mail, reset->user, reset->token);
+                deliverPasswordReset(st->cfg.mail, reset->user, reset->token, str(body, "lang"));
             }
         }
         res.set_content(
@@ -286,6 +294,29 @@ void registerAccountRoutes(httplib::Server& svr, Store& store, const AccountsCon
         }
         st->clear("login:" + user->email);  // a locked-out person can get back in by resetting
         clearSessionCookie(*st, res);
+        res.set_content(R"({"ok":true})", "application/json");
+    });
+
+    // Opening the emailed link confirms the address. It works without being signed in (the email may be opened on a phone).
+    svr.Post("/api/auth/verify", [st](const Request& req, Response& res) {
+        if (!prelude(*st, req, res, st->apiLimiter, true)) return;  // the token is 256 random bits, so guessing is hopeless
+        json body;
+        if (!readJson(req, res, &body)) return;
+        if (!st->store.verifyEmail(str(body, "token"))) {
+            return http::sendError(res, 400, "This link has expired or was already used. Sign in and ask for a new one.");
+        }
+        res.set_content(R"({"ok":true})", "application/json");
+    });
+
+    svr.Post("/api/auth/resend-verification", [st](const Request& req, Response& res) {
+        if (!prelude(*st, req, res, st->apiLimiter, true)) return;  // plus 3 emails per hour per account below
+        auto user = requireUser(*st, req, res);
+        if (!user) return;
+        json body;
+        if (!readJson(req, res, &body)) return;
+        if (!user->verified && st->allowHourly("verify:" + std::to_string(user->id), 3)) {
+            deliverEmailVerification(st->cfg.mail, *user, st->store.createEmailVerification(user->id), str(body, "lang"));
+        }
         res.set_content(R"({"ok":true})", "application/json");
     });
 
@@ -326,7 +357,7 @@ void registerAccountRoutes(httplib::Server& svr, Store& store, const AccountsCon
     svr.Post("/api/links/invite", [st](const Request& req, Response& res) {
         if (!prelude(*st, req, res, st->apiLimiter, true)) return;
         auto user = requireUser(*st, req, res, "protected");
-        if (!user) return;
+        if (!user || !requireVerified(*user, res)) return;
         res.set_content(json{{"code", st->store.createInvite(user->id)}, {"expiresInHours", 24}}.dump(),
                         "application/json");
     });
@@ -334,7 +365,7 @@ void registerAccountRoutes(httplib::Server& svr, Store& store, const AccountsCon
     svr.Post("/api/links/accept", [st](const Request& req, Response& res) {
         if (!prelude(*st, req, res, st->codeLimiter, true)) return;
         auto user = requireUser(*st, req, res, "helper");
-        if (!user) return;
+        if (!user || !requireVerified(*user, res)) return;
         json body;
         if (!readJson(req, res, &body)) return;
         const std::string key = "invite:" + std::to_string(user->id);

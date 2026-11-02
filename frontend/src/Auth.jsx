@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { api, friendlyError } from './api.js'
+import { translateError, useLang, useT } from './i18n.js'
 
 // Modes: login, signup, forgot (ask for an email link), reset (choose a new password from the emailed link).
 export default function Auth({ onAuthed, resetToken, onResetDone }) {
+  const t = useT()
+  const lang = useLang()
   const [mode, setMode] = useState(resetToken ? 'reset' : 'login')
   const [confirm, setConfirm] = useState('')
   const [notice, setNotice] = useState('')
@@ -29,13 +32,13 @@ export default function Auth({ onAuthed, resetToken, onResetDone }) {
     setBusy(true)
     try {
       if (mode === 'forgot') {
-        const data = await api('/api/auth/forgot', { method: 'POST', body: { email } })
-        setNotice(data.message)
+        await api('/api/auth/forgot', { method: 'POST', body: { email, lang } })
+        setNotice(t('forgotSent'))
         return
       }
       if (mode === 'reset') {
         if (password !== confirm) {
-          setError('The two passwords are not the same.')
+          setError(t('mismatch'))
           return
         }
         await api('/api/auth/reset', { method: 'POST', body: { token: resetToken, password } })
@@ -43,14 +46,14 @@ export default function Auth({ onAuthed, resetToken, onResetDone }) {
         setMode('login')
         setPassword('')
         setConfirm('')
-        setNotice('Your password was changed. Please sign in with the new one.')
+        setNotice(t('changed'))
         return
       }
-      const body = mode === 'login' ? { email, password } : { email, password, displayName, role }
+      const body = mode === 'login' ? { email, password } : { email, password, displayName, role, lang }
       const data = await api(mode === 'login' ? '/api/auth/login' : '/api/auth/signup', { method: 'POST', body })
       onAuthed(data.user)
     } catch (err) {
-      setError(friendlyError(err))
+      setError(translateError(friendlyError(err), lang))
     } finally {
       setBusy(false)
     }
@@ -58,43 +61,36 @@ export default function Auth({ onAuthed, resetToken, onResetDone }) {
 
   return (
     <section className="card">
-      <h2>{{ login: 'Sign in', signup: 'Create an account', forgot: 'Forgot your password?', reset: 'Choose a new password' }[mode]}</h2>
-      <p className="lead">
-        {{
-          login: 'Sign in to send messages to your family helper, or to see what your family has sent you.',
-          signup: 'An account lets a person and a trusted family member work together. Checking a message never needs one.',
-          forgot: 'Enter your email and we will send you a link to choose a new one.',
-          reset: 'Pick a new password for your account. You will be signed out on other devices.',
-        }[mode]}
-      </p>
+      <h2>{t({ login: 'titleLogin', signup: 'titleSignup', forgot: 'titleForgot', reset: 'titleReset' }[mode])}</h2>
+      <p className="lead">{t({ login: 'leadLogin', signup: 'leadSignup', forgot: 'leadForgot', reset: 'leadReset' }[mode])}</p>
       {notice && <p role="status" className="notice">{notice}</p>}
       <form onSubmit={submit} className="stack">
         {mode === 'signup' && (
           <>
-            <label htmlFor="name">Your name</label>
+            <label htmlFor="name">{t('yourName')}</label>
             <input id="name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={60} required autoComplete="name" />
             <fieldset>
-              <legend>I am…</legend>
+              <legend>{t('iAm')}</legend>
               <label className="radio">
                 <input type="radio" name="role" checked={role === 'protected'} onChange={() => setRole('protected')} />
-                <span>someone who wants help staying safe from scams</span>
+                <span>{t('roleProtected')}</span>
               </label>
               <label className="radio">
                 <input type="radio" name="role" checked={role === 'helper'} onChange={() => setRole('helper')} />
-                <span>a family member or friend who helps someone</span>
+                <span>{t('roleHelper')}</span>
               </label>
             </fieldset>
           </>
         )}
         {mode !== 'reset' && (
           <>
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">{t('email')}</label>
             <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
           </>
         )}
         {mode !== 'forgot' && (
           <>
-            <label htmlFor="password">{mode === 'reset' ? 'New password' : 'Password'}</label>
+            <label htmlFor="password">{mode === 'reset' ? t('newPassword') : t('password')}</label>
             <input
               id="password"
               type="password"
@@ -109,32 +105,30 @@ export default function Auth({ onAuthed, resetToken, onResetDone }) {
         )}
         {mode === 'reset' && (
           <>
-            <label htmlFor="confirm">Type it again</label>
+            <label htmlFor="confirm">{t('again')}</label>
             <input id="confirm" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={10} maxLength={128} autoComplete="new-password" />
           </>
         )}
-        {(mode === 'signup' || mode === 'reset') && <p className="privacy">Use at least 10 characters. A few random words works well.</p>}
+        {(mode === 'signup' || mode === 'reset') && <p className="privacy">{t('hint')}</p>}
         {error && <p role="alert" className="error">{error}</p>}
         <button type="submit" className="primary" disabled={busy}>
-          {busy
-            ? 'Please wait…'
-            : { login: 'Sign in', signup: 'Create account', forgot: 'Send me a link', reset: 'Change my password' }[mode]}
+          {busy ? t('wait') : t({ login: 'btnLogin', signup: 'btnSignup', forgot: 'btnForgot', reset: 'btnReset' }[mode])}
         </button>
       </form>
       {mode === 'login' && (
         <p className="switch">
-          <button type="button" className="link" onClick={() => go('forgot')}>Forgot your password?</button>
+          <button type="button" className="link" onClick={() => go('forgot')}>{t('forgotLink')}</button>
         </p>
       )}
       <p className="switch">
-        {mode === 'login' ? 'New here? ' : mode === 'signup' ? 'Already have an account? ' : ''}
+        {mode === 'login' ? t('newHere') : mode === 'signup' ? t('haveAccount') : ''}
         {(mode === 'login' || mode === 'signup') && (
           <button type="button" className="link" onClick={() => go(mode === 'login' ? 'signup' : 'login')}>
-            {mode === 'login' ? 'Create an account' : 'Sign in'}
+            {mode === 'login' ? t('titleSignup') : t('titleLogin')}
           </button>
         )}
         {(mode === 'forgot' || mode === 'reset') && (
-          <button type="button" className="link" onClick={() => go('login')}>Back to sign in</button>
+          <button type="button" className="link" onClick={() => go('login')}>{t('back')}</button>
         )}
       </p>
     </section>

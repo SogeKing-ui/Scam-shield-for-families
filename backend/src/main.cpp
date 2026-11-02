@@ -158,6 +158,8 @@ int main() {
             ex = scamshield::explain(explainer, text, lang);  // built-in, says why
         } else if (!user) {
             blockNote = "Sign in to use AI explanations. This is the built-in explanation.";
+        } else if (!user->verified) {
+            blockNote = "Confirm your email to use AI explanations. We sent you a link. This is the built-in explanation.";
         } else {
             switch (store->useAi(user->id, userDailyCap, globalDailyCap)) {
                 case scamshield::AiQuota::Ok:

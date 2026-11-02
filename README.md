@@ -53,6 +53,14 @@ Checking a message never needs an account. Accounts add a safe way for a person 
 
 Either side can remove the link at any time, which deletes what was shared. Anyone can delete their account and all of its data.
 
+### Languages
+
+The page header has a language menu: English, Español, and Kreyòl ayisyen. It translates the page shell, sign in, sign up, forgot/reset password, and the email-confirmation messages. Account emails (confirmation and password reset) are sent in the language chosen when the person signed up or asked for the link. The message checker and the Family screens are still English only, and the Spanish and Creole text needs review by native speakers before real use.
+
+### Confirming your email
+
+After sign-up, the person gets an email with a link that works once for 24 hours (in dev mode it is printed in the backend terminal, next to the reset links). Until the address is confirmed the account can check messages, but cannot use AI explanations or create/accept family invites, so fake accounts cannot multiply the daily AI limits or link themselves to someone. A banner offers to send the link again (3 per hour). Opening a password-reset link also confirms the address. Databases made before this feature are upgraded automatically and their existing accounts count as confirmed.
+
 ### Forgot password
 
 On the sign-in page, **Forgot your password?** asks for an email and always shows the same message, whether or not an account exists. If it does, a link is sent that works once for 30 minutes; choosing a new password signs the account out on every device. Asking again replaces the older link, and each address can request at most 3 per hour.
@@ -106,11 +114,11 @@ backend/
   src/store.*         accounts, sessions, links, shared messages (SQLite)
   src/crypto.*        scrypt password hashing, AES-256-GCM encryption
   src/accounts.*      account and family API routes
-  src/mailer.*        password-reset email (Resend API, or console in dev mode)
+  src/mailer.*        account emails in English, Spanish, Creole (Resend API, or console in dev mode)
   src/main.cpp        HTTP server, security headers, analyze/explain routes
   tests/              unit tests (make test)
   third_party/        cpp-httplib and nlohmann/json (single headers, MIT)
-frontend/             React app (Vite)
+frontend/             React app (Vite); src/i18n.js holds the English, Spanish and Creole text
 tools/                evaluation script and helper (tools/evaluate.py)
 data/                 public datasets for evaluation (not committed)
 docs/SECURITY.md      threat model and security checklist
@@ -119,9 +127,9 @@ docs/SECURITY.md      threat model and security checklist
 ## Roadmap
 
 1. Collect real examples from family and friends (with permission, names removed) and test on messages the rules have never seen.
-2. Native-speaker review and more Haitian Creole and Spanish phrases, plus a language toggle in the UI.
-3. Have Haitian Creole and Spanish speakers review the AI explanations; add a Creole/Spanish interface.
-4. Email or text alerts to the helper when something is shared, a helper-to-person reply, and email verification at sign-up.
+2. Native-speaker review of the Creole and Spanish interface and emails, more scam phrases in both languages, and translating the checker and Family screens.
+3. Have Haitian Creole and Spanish speakers review the AI explanations.
+4. Email or text alerts to the helper when something is shared, a helper-to-person reply, and a "your password was changed" email.
 5. HTTPS deployment, then the remaining items in `docs/SECURITY.md`.
 6. Screenshot input (OCR).
 

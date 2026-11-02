@@ -22,6 +22,7 @@ struct User {
     std::string email;
     std::string displayName;
     std::string role;  // "protected" (person being protected) or "helper" (trusted family member)
+    bool verified = false;  // has the person confirmed they own this email address?
 };
 
 struct LinkedPerson {
@@ -44,6 +45,7 @@ struct SharedItem {
 enum class AiQuota { Ok, UserLimit, GlobalLimit };
 
 constexpr int kResetMinutes = 30;  // how long a password-reset link works
+constexpr int kVerifyHours = 24;   // how long an email-confirmation link works
 
 struct PasswordReset {
     User user;
@@ -66,6 +68,11 @@ public:
     // resetPassword uses the token once, sets the new password, and signs the account out everywhere.
     std::optional<PasswordReset> createPasswordReset(const std::string& email);
     std::optional<User> resetPassword(const std::string& token, const std::string& newPassword);
+
+    // Email confirmation. createEmailVerification replaces any earlier link for the account.
+    // verifyEmail uses the token once and marks the address as confirmed.
+    std::string createEmailVerification(std::int64_t userId);
+    std::optional<User> verifyEmail(const std::string& token);
 
     // Sessions (token is the raw cookie value; only its hash is stored)
     std::string createSession(std::int64_t userId);
@@ -93,6 +100,7 @@ public:
     bool deleteShared(const User& user, std::int64_t itemId);
 
 private:
+    void migrate();
     std::optional<User> userById(std::int64_t id);
 
     Db db_;

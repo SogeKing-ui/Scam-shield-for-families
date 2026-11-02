@@ -53,27 +53,93 @@ MailConfig mailConfigFromEnv() {
 // The token goes after "#", which browsers never send to a server, so it stays out of server logs and
 // Referer headers. The web app reads it and removes it from the address bar.
 std::string resetLink(const MailConfig& cfg, const std::string& token) { return cfg.appUrl + "/#reset=" + token; }
+std::string verifyLink(const MailConfig& cfg, const std::string& token) { return cfg.appUrl + "/#verify=" + token; }
 
-std::string resetEmailBody(const std::string& displayName, const std::string& link, int minutes) {
-    return "Hello " + displayName +
+std::string mailLang(const std::string& requested) { return isSupportedLanguage(requested) ? requested : "en"; }
+
+// The Spanish and Haitian Creole texts should be reviewed by native speakers before real users see them.
+std::string resetEmailSubject(const std::string& lang) {
+    if (lang == "es") return "Restablece tu contraseña de Scam Shield";
+    if (lang == "ht") return "Chanje modpas Scam Shield ou";
+    return "Reset your Scam Shield password";
+}
+
+std::string resetEmailBody(const std::string& lang, const std::string& name, const std::string& link, int minutes) {
+    const std::string n = std::to_string(minutes);
+    if (lang == "es") {
+        return "Hola " + name +
+               ",\n\nAlguien pidió restablecer la contraseña de tu cuenta de Scam Shield. "
+               "Para elegir una contraseña nueva, abre este enlace:\n\n" +
+               link + "\n\nEl enlace funciona una sola vez y caduca en " + n +
+               " minutos.\n\nSi tú no lo pediste, puedes ignorar este correo. Tu contraseña no cambiará.\n"
+               "Scam Shield nunca te pedirá tu contraseña por teléfono ni por mensaje de texto.\n";
+    }
+    if (lang == "ht") {
+        return "Bonjou " + name +
+               ",\n\nYon moun mande pou chanje modpas kont Scam Shield ou an. "
+               "Pou chwazi yon nouvo modpas, louvri lyen sa a:\n\n" +
+               link + "\n\nLyen an mache yon sèl fwa, epi li ekspire apre " + n +
+               " minit.\n\nSi se pa ou ki mande sa, ou ka inyore imèl sa a. Modpas ou p ap chanje.\n"
+               "Scam Shield pa janm ap mande w modpas ou nan telefòn oswa nan mesaj tèks.\n";
+    }
+    return "Hello " + name +
            ",\n\nSomeone asked to reset the password for your Scam Shield account. "
            "To choose a new password, open this link:\n\n" +
-           link + "\n\nThe link works once and expires in " + std::to_string(minutes) +
+           link + "\n\nThe link works once and expires in " + n +
            " minutes.\n\nIf you did not ask for this, you can ignore this email. Your password will not change.\n"
            "Scam Shield will never ask you for your password by phone or text.\n";
 }
 
-void deliverPasswordReset(const MailConfig& cfg, const User& user, const std::string& token) {
-    const std::string link = resetLink(cfg, token);
+std::string verifyEmailSubject(const std::string& lang) {
+    if (lang == "es") return "Confirma tu correo para Scam Shield";
+    if (lang == "ht") return "Konfime imèl ou pou Scam Shield";
+    return "Confirm your email for Scam Shield";
+}
+
+std::string verifyEmailBody(const std::string& lang, const std::string& name, const std::string& link, int hours) {
+    const std::string h = std::to_string(hours);
+    if (lang == "es") {
+        return "Hola " + name +
+               ",\n\nBienvenido a Scam Shield. Por favor confirma que este es tu correo abriendo este enlace:\n\n" +
+               link + "\n\nEl enlace caduca en " + h +
+               " horas. Si no creaste una cuenta, puedes ignorar este correo.\n";
+    }
+    if (lang == "ht") {
+        return "Bonjou " + name +
+               ",\n\nByenveni nan Scam Shield. Tanpri konfime se imèl ou sa a lè w louvri lyen sa a:\n\n" + link +
+               "\n\nLyen an ekspire apre " + h + " è. Si se pa ou ki te kreye yon kont, ou ka inyore imèl sa a.\n";
+    }
+    return "Hello " + name +
+           ",\n\nWelcome to Scam Shield. Please confirm this is your email address by opening this link:\n\n" + link +
+           "\n\nThe link expires in " + h + " hours. If you did not create an account, you can ignore this email.\n";
+}
+
+namespace {
+void deliver(const MailConfig& cfg, const User& user, const std::string& what, const std::string& link,
+             const std::string& subject, const std::string& body) {
     if (!cfg.enabled()) {
-        std::cout << "[dev mode] Password reset link for " << user.email << " (no email provider is set up):\n  " << link
+        std::cout << "[dev mode] " << what << " link for " << user.email << " (no email provider is set up):\n  " << link
                   << std::endl;
         return;
     }
     const std::string to = user.email;
-    const std::string body = resetEmailBody(user.displayName, link, kResetMinutes);
     MailConfig copy = cfg;
-    std::thread([copy, to, body]() { sendEmail(copy, to, "Reset your Scam Shield password", body); }).detach();
+    std::thread([copy, to, subject, body]() { sendEmail(copy, to, subject, body); }).detach();
+}
+}  // namespace
+
+void deliverPasswordReset(const MailConfig& cfg, const User& user, const std::string& token, const std::string& lang) {
+    const std::string l = mailLang(lang);
+    const std::string link = resetLink(cfg, token);
+    deliver(cfg, user, "Password reset", link, resetEmailSubject(l),
+            resetEmailBody(l, user.displayName, link, kResetMinutes));
+}
+
+void deliverEmailVerification(const MailConfig& cfg, const User& user, const std::string& token, const std::string& lang) {
+    const std::string l = mailLang(lang);
+    const std::string link = verifyLink(cfg, token);
+    deliver(cfg, user, "Email confirmation", link, verifyEmailSubject(l),
+            verifyEmailBody(l, user.displayName, link, kVerifyHours));
 }
 
 }  // namespace scamshield

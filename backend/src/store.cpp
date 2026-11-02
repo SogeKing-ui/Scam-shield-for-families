@@ -15,6 +15,7 @@ namespace {
 constexpr long long kSessionSeconds = 7 * 24 * 3600;
 constexpr long long kInviteSeconds = 24 * 3600;
 constexpr long long kResetSeconds = kResetMinutes * 60;
+constexpr long long kVerifySeconds = kVerifyHours * 3600;
 constexpr std::size_t kMaxSharedPerPair = 200;
 const char* kCodeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";  // no 0/O/1/I/L
 
@@ -83,7 +84,8 @@ Store::Store(const std::string& dbPath, const std::string& dataKey) : db_(dbPath
         " display_name TEXT NOT NULL,"
         " role TEXT NOT NULL CHECK (role IN ('protected','helper')),"
         " pw_hash TEXT NOT NULL,"
-        " created_at INTEGER NOT NULL);"
+        " created_at INTEGER NOT NULL,"
+        " email_verified_at INTEGER);"
         "CREATE TABLE IF NOT EXISTS sessions ("
         " token_hash TEXT PRIMARY KEY,"
         " user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
@@ -116,15 +118,37 @@ Store::Store(const std::string& dbPath, const std::string& dataKey) : db_(dbPath
         "CREATE TABLE IF NOT EXISTS password_resets ("
         " token_hash TEXT PRIMARY KEY,"
         " user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
+        " expires_at INTEGER NOT NULL);"
+        "CREATE TABLE IF NOT EXISTS email_verifications ("
+        " token_hash TEXT PRIMARY KEY,"
+        " user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
         " expires_at INTEGER NOT NULL);");
+    migrate();
     dummyHash_ = crypto::hashPassword("not-a-real-password");
 }
 
+// Databases created before email confirmation existed have no email_verified_at column. Add it, and treat
+// the accounts that already exist as confirmed so nobody is locked out by the upgrade.
+void Store::migrate() {
+    bool hasColumn = false;
+    {
+        Stmt info(db_, "PRAGMA table_info(users)");
+        while (info.step()) {
+            if (info.colText(1) == "email_verified_at") hasColumn = true;
+        }
+    }
+    if (!hasColumn) {
+        db_.exec("ALTER TABLE users ADD COLUMN email_verified_at INTEGER");
+        Stmt grandfather(db_, "UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL");
+        grandfather.run();
+    }
+}
+
 std::optional<User> Store::userById(std::int64_t id) {
-    Stmt st(db_, "SELECT id, email, display_name, role FROM users WHERE id = ?");
+    Stmt st(db_, "SELECT id, email, display_name, role, email_verified_at IS NOT NULL FROM users WHERE id = ?");
     st.integer(1, id);
     if (!st.step()) return std::nullopt;
-    return User{st.colInt(0), st.colText(1), st.colText(2), st.colText(3)};
+    return User{st.colInt(0), st.colText(1), st.colText(2), st.colText(3), st.colInt(4) != 0};
 }
 
 std::optional<User> Store::createUser(const std::string& email, const std::string& displayName,
@@ -150,10 +174,10 @@ std::optional<User> Store::authenticate(const std::string& email, const std::str
     bool found = false;
     {
         std::lock_guard<std::mutex> lock(mu_);
-        Stmt st(db_, "SELECT id, email, display_name, role, pw_hash FROM users WHERE email = ?");
+        Stmt st(db_, "SELECT id, email, display_name, role, pw_hash, email_verified_at IS NOT NULL FROM users WHERE email = ?");
         st.text(1, email);
         if (st.step()) {
-            user = User{st.colInt(0), st.colText(1), st.colText(2), st.colText(3)};
+            user = User{st.colInt(0), st.colText(1), st.colText(2), st.colText(3), st.colInt(5) != 0};
             hash = st.colText(4);
             found = true;
         }
@@ -207,12 +231,44 @@ std::optional<User> Store::resetPassword(const std::string& token, const std::st
     Stmt use(db_, "DELETE FROM password_resets WHERE token_hash = ? AND expires_at > ?");
     use.text(1, tokenHash).integer(2, now()).run();
     if (use.changes() == 0) return std::nullopt;
-    Stmt upd(db_, "UPDATE users SET pw_hash = ? WHERE id = ?");
-    upd.text(1, hash).integer(2, userId).run();
+    // Opening the emailed link proves the person controls this inbox, so the address counts as confirmed.
+    Stmt upd(db_, "UPDATE users SET pw_hash = ?, email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ?");
+    upd.text(1, hash).integer(2, now()).integer(3, userId).run();
     Stmt sessions(db_, "DELETE FROM sessions WHERE user_id = ?");  // sign out everywhere
     sessions.integer(1, userId).run();
     Stmt others(db_, "DELETE FROM password_resets WHERE user_id = ?");
     others.integer(1, userId).run();
+    tx.commit();
+    return userById(userId);
+}
+
+std::string Store::createEmailVerification(std::int64_t userId) {
+    const std::string token = crypto::randomHex(32);
+    std::lock_guard<std::mutex> lock(mu_);
+    Tx tx(db_);
+    Stmt clear(db_, "DELETE FROM email_verifications WHERE user_id = ? OR expires_at < ?");  // one active link
+    clear.integer(1, userId).integer(2, now()).run();
+    Stmt st(db_, "INSERT INTO email_verifications (token_hash, user_id, expires_at) VALUES (?,?,?)");
+    st.text(1, crypto::sha256Hex(token)).integer(2, userId).integer(3, now() + kVerifySeconds).run();
+    tx.commit();
+    return token;
+}
+
+std::optional<User> Store::verifyEmail(const std::string& token) {
+    if (!validToken(token)) return std::nullopt;
+    const std::string tokenHash = crypto::sha256Hex(token);
+    std::lock_guard<std::mutex> lock(mu_);
+    Tx tx(db_);
+    Stmt find(db_, "SELECT user_id FROM email_verifications WHERE token_hash = ? AND expires_at > ?");
+    find.text(1, tokenHash).integer(2, now());
+    if (!find.step()) return std::nullopt;
+    const std::int64_t userId = find.colInt(0);
+    // Deleting the row is what makes the link single-use.
+    Stmt use(db_, "DELETE FROM email_verifications WHERE token_hash = ?");
+    use.text(1, tokenHash).run();
+    if (use.changes() == 0) return std::nullopt;
+    Stmt mark(db_, "UPDATE users SET email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ?");
+    mark.integer(1, now()).integer(2, userId).run();
     tx.commit();
     return userById(userId);
 }
@@ -231,11 +287,11 @@ std::optional<User> Store::userForSession(const std::string& token) {
     if (!validToken(token)) return std::nullopt;
     std::lock_guard<std::mutex> lock(mu_);
     Stmt st(db_,
-            "SELECT u.id, u.email, u.display_name, u.role FROM sessions s JOIN users u ON u.id = s.user_id "
+            "SELECT u.id, u.email, u.display_name, u.role, u.email_verified_at IS NOT NULL FROM sessions s JOIN users u ON u.id = s.user_id "
             "WHERE s.token_hash = ? AND s.expires_at > ?");
     st.text(1, crypto::sha256Hex(token)).integer(2, now());
     if (!st.step()) return std::nullopt;
-    return User{st.colInt(0), st.colText(1), st.colText(2), st.colText(3)};
+    return User{st.colInt(0), st.colText(1), st.colText(2), st.colText(3), st.colInt(4) != 0};
 }
 
 void Store::deleteSession(const std::string& token) {

@@ -213,3 +213,8 @@ button.danger { padding: 12px 18px; font-weight: 700; color: #fff; background: v
 .msg { white-space: pre-wrap; word-break: break-word; font: inherit; background: var(--bg); padding: 12px; border-radius: 8px; margin: 8px 0; }
 
 .notice { margin: 0 0 16px; padding: 12px 16px; border-radius: 10px; color: var(--low); background: var(--low-bg); border: 2px solid var(--low); }
+
+.lang { display: flex; gap: 8px; align-items: center; }
+.lang label { margin: 0; font-weight: 400; color: var(--muted); }
+.notice p { margin: 0 0 8px; }
+.resend-note { color: var(--muted); }

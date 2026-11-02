@@ -1,9 +1,11 @@
 // Tests for password hashing, encryption, sessions, family links, and sharing.
+#include <cstdio>
 #include <iostream>
 #include <string>
 
 #include "analyzer.hpp"
 #include "crypto.hpp"
+#include "db.hpp"
 #include "json.hpp"
 #include "store.hpp"
 
@@ -151,6 +153,59 @@ int main() {
         auto r3 = s3.createPasswordReset("reset@example.com");
         CHECK(r3 && s3.deleteAccount(u->id));
         CHECK(!s3.resetPassword(r3->token, "brand new password"));  // deleted account's links die with it
+    }
+
+    {  // Email confirmation
+        Store s4(":memory:", key);
+        auto u = s4.createUser("verify@example.com", "Verify Me", "helper", "some long password");
+        CHECK(u && !u->verified);
+        CHECK(!s4.authenticate("verify@example.com", "some long password")->verified);
+        const std::string t1 = s4.createEmailVerification(u->id);
+        const std::string t2 = s4.createEmailVerification(u->id);  // replaces the first
+        CHECK(t1.size() == 64 && t1 != t2);
+        CHECK(!s4.verifyEmail(t1));
+        CHECK(!s4.verifyEmail("short"));
+        CHECK(!s4.verifyEmail(std::string(64, 'b')));
+        std::string session = s4.createSession(u->id);
+        CHECK(!s4.userForSession(session)->verified);
+        auto done = s4.verifyEmail(t2);
+        CHECK(done && done->verified && done->id == u->id);
+        CHECK(!s4.verifyEmail(t2));  // single use
+        CHECK(s4.userForSession(session)->verified);
+        CHECK(s4.authenticate("verify@example.com", "some long password")->verified);
+
+        // A password reset also proves the person controls the inbox.
+        auto v = s4.createUser("v2@example.com", "V2", "helper", "some long password");
+        CHECK(v && !v->verified);
+        auto reset = s4.createPasswordReset("v2@example.com");
+        CHECK(reset && s4.resetPassword(reset->token, "another long password"));
+        CHECK(s4.authenticate("v2@example.com", "another long password")->verified);
+    }
+    {  // An older database (made before email confirmation existed) is upgraded, and its accounts count as confirmed
+        const std::string path = "/tmp/scamshield_migrate_test.db";
+        for (const char* suffix : {"", "-wal", "-shm"}) std::remove((path + suffix).c_str());
+        {
+            Db old(path);
+            old.exec(
+                "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,"
+                " display_name TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('protected','helper')),"
+                " pw_hash TEXT NOT NULL, created_at INTEGER NOT NULL);");
+            old.exec(("INSERT INTO users (email, display_name, role, pw_hash, created_at) VALUES ('old@example.com','Old','helper','" +
+                      crypto::hashPassword("an old password 1") + "', 1000)")
+                         .c_str());
+        }
+        {
+            Store upgraded(path, key);
+            auto o = upgraded.authenticate("old@example.com", "an old password 1");
+            CHECK(o && o->verified);
+            auto fresh = upgraded.createUser("new@example.com", "New", "helper", "a new password 12");
+            CHECK(fresh && !fresh->verified);
+        }
+        {
+            Store again(path, key);  // opening it a second time must not re-confirm anyone
+            CHECK(!again.authenticate("new@example.com", "a new password 12")->verified);
+        }
+        for (const char* suffix : {"", "-wal", "-shm"}) std::remove((path + suffix).c_str());
     }
 
     {  // Daily AI limits: per account and overall; failed attempts can be refunded
