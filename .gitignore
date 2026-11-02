@@ -1,0 +1,20 @@
+# C++ build output
+backend/build/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Secrets and local config
+.env
+.env.*
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# Vite temp files
+*.timestamp-*.mjs
