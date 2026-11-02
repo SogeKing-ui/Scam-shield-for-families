@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api.js'
+import { ShieldMark } from './Signs.jsx'
 import { LANGS, LangContext, detectLang, rememberLang, translate, translateError } from './i18n.js'
 import Auth from './Auth.jsx'
 import Checker from './Checker.jsx'
@@ -92,29 +93,32 @@ export default function App() {
     <LangContext.Provider value={lang}>
     <main className="page">
       <header className="top">
-        <div>
-          <h1>Scam Shield</h1>
-          <p className="lead">{t('tagline')}</p>
+        <div className="brand">
+          <ShieldMark />
+          <span className="brand-name">Scam Shield</span>
         </div>
-        <div className="lang">
-          <label htmlFor="lang">{t('language')}</label>
-          <select id="lang" value={lang} onChange={(e) => changeLang(e.target.value)}>
-            {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
-          </select>
+        <div className="lang seg" role="group" aria-label={t('language')}>
+          {LANGS.map((l) => (
+            <button key={l.code} type="button" lang={l.code} aria-pressed={lang === l.code} onClick={() => changeLang(l.code)}>
+              {l.short}
+            </button>
+          ))}
         </div>
         <nav aria-label="Main">
-          <button type="button" className={tab === 'check' ? 'tab active' : 'tab'} onClick={() => setTab('check')}>{t('tabCheck')}</button>
+          <button type="button" className={tab === 'check' ? 'tab active' : 'tab'} aria-current={tab === 'check' ? 'page' : undefined} onClick={() => setTab('check')}>{t('tabCheck')}</button>
           {user && (
-            <button type="button" className={tab === 'family' ? 'tab active' : 'tab'} onClick={() => setTab('family')}>
+            <button type="button" className={tab === 'family' ? 'tab active' : 'tab'} aria-current={tab === 'family' ? 'page' : undefined} onClick={() => setTab('family')}>
               {t('tabFamily')}{unread > 0 ? ` ${t('newCount', { n: unread })}` : ''}
             </button>
           )}
           {ready && !user && (
-            <button type="button" className={tab === 'auth' ? 'tab active' : 'tab'} onClick={() => setTab('auth')}>{t('tabSignIn')}</button>
+            <button type="button" className={tab === 'auth' ? 'tab active' : 'tab'} aria-current={tab === 'auth' ? 'page' : undefined} onClick={() => setTab('auth')}>{t('tabSignIn')}</button>
           )}
-          {user && <button type="button" className="tab" onClick={signOut}>{t('signOut', { name: user.displayName })}</button>}
+          {user && <button type="button" className="tab quiet-tab" onClick={signOut}>{t('signOut', { name: user.displayName })}</button>}
         </nav>
       </header>
+
+      {tab === 'check' && !resetToken && <h1 className="page-title">{t('tagline')}</h1>}
 
       {verifyStatus === 'ok' && <p role="status" className="notice">{t('verified')}</p>}
       {verifyStatus && verifyStatus !== 'ok' && <p role="alert" className="error">{translateError(verifyStatus, lang)}</p>}

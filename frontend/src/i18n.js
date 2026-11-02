@@ -5,9 +5,9 @@
 import { createContext, useContext } from 'react'
 
 export const LANGS = [
-  { code: 'en', label: 'English' },
-  { code: 'es', label: 'Español' },
-  { code: 'ht', label: 'Kreyòl ayisyen' },
+  { code: 'en', label: 'English', short: 'English' },
+  { code: 'es', label: 'Español', short: 'Español' },
+  { code: 'ht', label: 'Kreyòl ayisyen', short: 'Kreyòl' },
 ]
 
 export const LangContext = createContext('en')

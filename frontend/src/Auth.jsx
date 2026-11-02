@@ -109,7 +109,7 @@ export default function Auth({ onAuthed, resetToken, onResetDone }) {
             <input id="confirm" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={10} maxLength={128} autoComplete="new-password" />
           </>
         )}
-        {(mode === 'signup' || mode === 'reset') && <p className="privacy">{t('hint')}</p>}
+        {(mode === 'signup' || mode === 'reset') && <p className="hint">{t('hint')}</p>}
         {error && <p role="alert" className="error">{error}</p>}
         <button type="submit" className="primary" disabled={busy}>
           {busy ? t('wait') : t({ login: 'btnLogin', signup: 'btnSignup', forgot: 'btnForgot', reset: 'btnReset' }[mode])}

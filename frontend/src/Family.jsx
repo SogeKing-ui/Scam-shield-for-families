@@ -60,11 +60,18 @@ export default function Family({ user, onUnread, onDeleted }) {
 
   return (
     <div className="stack">
+      {!isProtected && (
+        <section className="card">
+          <h2>Messages to look at</h2>
+          <Inbox onUnread={onUnread} />
+        </section>
+      )}
+
       <section className="card">
         <h2>{isProtected ? 'Your family helpers' : 'People you help'}</h2>
-        {links === null && <p className="privacy">Loading…</p>}
+        {links === null && <p className="hint">Loading…</p>}
         {links && links.length === 0 && (
-          <p className="privacy">
+          <p className="hint">
             {isProtected ? 'No helpers yet.' : 'You are not linked to anyone yet.'}
           </p>
         )}
@@ -86,7 +93,7 @@ export default function Family({ user, onUnread, onDeleted }) {
               <div className="invite" role="status">
                 <p>Give this code to your helper. It works once and expires in {invite.expiresInHours} hours.</p>
                 <p className="code">{invite.code}</p>
-                <p className="privacy">Share it in person or by phone call, not in a public place.</p>
+                <p className="hint">Share it in person or by phone, not in a public place.</p>
               </div>
             )}
           </>
@@ -101,21 +108,18 @@ export default function Family({ user, onUnread, onDeleted }) {
         {error && <p role="alert" className="error">{error}</p>}
       </section>
 
-      {!isProtected && (
-        <section className="card">
-          <h2>Messages to look at</h2>
-          <Inbox onUnread={onUnread} />
-        </section>
-      )}
-
-      <section className="card">
+      <section className="card account">
         <h2>Your account</h2>
-        <p className="privacy">Signed in as {user.displayName} ({user.email}).</p>
-        <form onSubmit={deleteAccount} className="stack">
-          <label htmlFor="delpw">Delete my account and all shared messages</label>
-          <input id="delpw" type="password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} placeholder="Enter your password to confirm" autoComplete="current-password" required />
-          <button type="submit" className="danger">Delete my account</button>
-        </form>
+        <p className="hint">Signed in as {user.displayName} ({user.email}).</p>
+        <details>
+          <summary>Delete my account</summary>
+          <form onSubmit={deleteAccount} className="stack">
+            <p>This deletes your account and everything shared through it. It cannot be undone.</p>
+            <label htmlFor="delpw">Enter your password to confirm</label>
+            <input id="delpw" type="password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} autoComplete="current-password" required />
+            <button type="submit" className="danger">Delete my account</button>
+          </form>
+        </details>
       </section>
     </div>
   )
