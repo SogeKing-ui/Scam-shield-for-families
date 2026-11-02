@@ -4,6 +4,12 @@ Seniors and immigrant communities lose a lot of money to phishing texts, fake ba
 
 **Status:** working prototype. Detection, AI explanations, and the family-helper flow (accounts, linking, sharing, helper inbox) work end to end.
 
+## Demo
+
+![Scam Shield checking a fake IRS text, then explaining it with AI in English and Spanish](docs/demo.gif)
+
+Pasting a fake IRS message gives a "Very likely a scam" verdict with the reasons, then **Explain with AI** rewrites it in plain words, here in English and Spanish.
+
 ## How it works
 
 | Layer | Tech | Job |
