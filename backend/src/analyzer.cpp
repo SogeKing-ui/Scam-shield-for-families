@@ -25,7 +25,20 @@ bool endsWith(const std::string& s, const std::string& p) {
     return s.size() >= p.size() && s.compare(s.size() - p.size(), p.size(), p) == 0;
 }
 
-// Lowercase ASCII and turn phone "smart quotes" into plain apostrophes so that
+// Second byte of a UTF-8 "Latin-1 letter" (lead byte 0xC3) -> plain ASCII letter, or 0.
+// Lets "contraseña", "código", and "kòd" match "contrasena", "codigo", and "kod".
+char foldLatin(unsigned char b) {
+    if ((b >= 0xA0 && b <= 0xA5) || (b >= 0x80 && b <= 0x85)) return 'a';
+    if ((b >= 0xA8 && b <= 0xAB) || (b >= 0x88 && b <= 0x8B)) return 'e';
+    if ((b >= 0xAC && b <= 0xAF) || (b >= 0x8C && b <= 0x8F)) return 'i';
+    if ((b >= 0xB2 && b <= 0xB6) || (b >= 0x92 && b <= 0x96)) return 'o';
+    if ((b >= 0xB9 && b <= 0xBC) || (b >= 0x99 && b <= 0x9C)) return 'u';
+    if (b == 0xB1 || b == 0x91) return 'n';
+    if (b == 0xA7 || b == 0x87) return 'c';
+    return 0;
+}
+
+// Lowercase ASCII, fold accents, and turn phone "smart quotes" into plain apostrophes so that
 // "don’t" matches "don't".
 std::string normalize(const std::string& in) {
     std::string out;
@@ -37,6 +50,9 @@ std::string normalize(const std::string& in) {
              static_cast<unsigned char>(in[i + 2]) == 0x98)) {
             out.push_back('\'');
             i += 2;
+        } else if (c == 0xC3 && i + 1 < in.size() && foldLatin(static_cast<unsigned char>(in[i + 1])) != 0) {
+            out.push_back(foldLatin(static_cast<unsigned char>(in[i + 1])));
+            ++i;
         } else if (c < 128) {
             out.push_back(static_cast<char>(std::tolower(c)));
         } else {
@@ -92,21 +108,24 @@ const std::vector<TextRule>& textRules() {
          {"act now", "act immediately", "immediately", "urgent", "urgently", "right away",
           "within 24 hours", "within 48 hours", "final notice", "final warning", "last warning",
           "last chance", "expires today", "respond now", "ijan", "imedyatman", "urgente",
-          "de inmediato", "ultimo aviso", "último aviso"}},
+          "de inmediato", "ultimo aviso", "proximas 24 horas", "inmediatamente", "lo antes posible",
+          "hoy mismo", "dènye avètisman"}},
         {"threat", "Threats or scary consequences",
          "Threats of arrest, lawsuits, or a locked account are used to scare people into paying or sharing information.",
          20,
          {"arrest", "arrested", "warrant", "suspended", "locked", "legal action", "lawsuit",
           "deactivated", "will be closed", "jail", "deport", "deported", "deportation",
           "visa cancelled", "arete", "mandat", "arrestado", "suspendido", "suspendida", "bloqueado",
-          "bloqueada"}},
+          "bloqueada", "cancelada", "accion legal", "orden de arresto", "investigacion en curso",
+          "embargo", "kont ou bloke", "kont ou femen"}},
         {"payment", "Asks for a hard-to-trace payment",
          "Gift cards, wire transfers, crypto, and payment apps are favorites of scammers because the money is almost impossible to get back. Real agencies and companies do not demand these.",
          30,
          {"gift card", "gift cards", "giftcard", "itunes card", "google play card", "steam card",
           "wire transfer", "wire the money", "western union", "moneygram", "bitcoin", "crypto",
           "cryptocurrency", "zelle", "cash app", "cashapp", "venmo", "prepaid card",
-          "tarjeta de regalo", "kat kado"}},
+          "tarjeta de regalo", "tarjetas de regalo", "transferencia bancaria", "giro postal",
+          "criptomoneda", "kat kado"}},
         {"credentials", "Asks for private codes or account details",
          "Nobody legitimate will ask you to send a password, PIN, one-time code, or full Social Security number by text, email, or phone.",
          25,
@@ -114,31 +133,39 @@ const std::vector<TextRule>& textRules() {
           "one time code", "otp", "social security number", "ssn", "pin", "card number", "cvv",
           "routing number", "account number", "modpas", "mòdpas", "kod verifikasyon",
           "kòd verifikasyon", "contrasena", "contraseña", "codigo de verificacion",
-          "código de verificación", "numero de seguro social", "número de seguro social"}},
+          "código de verificación", "numero de seguro social", "seguro social", "clave", "numero de tarjeta",
+          "datos bancarios", "numero de cuenta", "mo de pas"}},
         {"link-action", "Pushes you to click or 'verify'",
          "Messages that tell you to click a link to verify or update an account are a common way to steal logins.",
          10,
          {"click the link", "click here", "tap the link", "tap here", "follow the link",
           "open the link", "verify your account", "confirm your account", "update your account",
-          "update your payment", "verify your identity"}},
+          "update your payment", "verify your identity", "haga clic", "haz clic", "pulse aqui",
+          "verifique su", "actualice su", "confirme sus datos", "klike la a", "klike sou lyen"}},
         {"impersonation", "Claims to be a well-known organization",
          "Scammers pretend to be banks, delivery companies, utilities, and government agencies. Do not trust the sender's name; contact the real organization yourself.",
          12,
          {"irs", "internal revenue service", "social security administration", "medicare",
           "medicaid", "amazon", "paypal", "your bank", "fedex", "usps", "netflix", "microsoft",
           "apple support", "wells fargo", "chase", "bank of america", "fpl", "duke energy",
-          "sheriff", "fbi", "uscis", "customs", "utility company"}},
+          "sheriff", "fbi", "uscis", "customs", "utility company", "ups", "u.s. postal service",
+          "postal service", "t-mobile", "home depot", "costco", "cvs", "walmart", "navy federal",
+          "citi", "citibank", "regions", "whatsapp", "edd", "ebt", "venmo", "verizon", "at&t",
+          "coinbase", "dhl", "correos", "estafeta", "agencia tributaria", "hacienda", "bbva",
+          "santander", "icloud", "telcel"}},
         {"prize", "Promises a prize or money",
          "If you did not enter a contest, you did not win one. 'Winnings' that cost you a fee are a scam.",
          20,
          {"you won", "you have won", "you've won", "winner", "congratulations", "lottery",
           "sweepstakes", "claim your prize", "inheritance", "unclaimed funds", "gagnan",
-          "ou genyen", "felicitaciones", "has ganado"}},
+          "ou genyen", "felicitaciones", "has ganado", "ha sido seleccionado", "ha sido seleccionada",
+          "felicidades", "ganador", "ganado", "loteria", "herencia",
+          "fondos no reclamados", "felisitasyon", "you have been selected", "you are selected"}},
         {"secrecy", "Tells you to keep it secret",
          "Scammers isolate people so family or the bank cannot warn them. A real emergency never requires secrecy.",
          25,
          {"don't tell", "do not tell", "dont tell", "keep this secret", "keep it secret",
-          "between us", "pa di pesonn", "pa di pèsonn", "no le digas", "no se lo digas"}},
+          "between us", "pa di pesonn", "mantenga esto en secreto", "no le digas", "no se lo digas"}},
         {"family", "Sounds like a 'family emergency' scam",
          "Messages like 'Hi Mom, this is my new number' or 'I need bail money' are common impersonation scams. Call the person on the number you already have.",
          25,
@@ -154,6 +181,71 @@ const std::vector<TextRule>& textRules() {
          "Surprise refunds and 'overpayments' are used to trick people into sharing bank details or sending money back.",
          12,
          {"refund", "overpaid", "overpayment", "you are owed", "reimbursement", "unclaimed"}},
+        {"delivery-notice", "Fake 'delivery problem' notice",
+         "Scam texts claim a package has a problem (bad address, small fee, on hold) so you click and enter card details. Check the tracking number on the carrier's real website instead.",
+         18,
+         {"could not be delivered", "cannot be delivered", "unable to deliver", "incomplete address",
+          "update your address", "confirm your address", "correct address", "reschedule",
+          "redelivery", "customs fee", "customs fees", "package is on hold", "on hold",
+          "delivery attempt", "failed delivery", "delivery failed", "missed delivery",
+          "paquete detenido", "paquete suspendido", "paquete suspendida", "no pudimos entregar",
+          "no se pudo entregar", "entrega fallida", "reprogramar", "direccion incompleta",
+          "actualice su direccion", "confirme su direccion", "gastos de aduana", "tasa de aduana",
+          "missing street information", "house number", "fill in the address", "delivery has been paused",
+          "delivery to door"}},
+        {"account-alert", "Fake account or card alert",
+         "Scam alerts say there is unusual activity or that your account or card is blocked, so you rush to a fake website. Call the number on the back of your card instead.",
+         20,
+         {"unauthorized activity", "unusual activity", "suspicious activity", "unusual sign-in",
+          "has been restricted", "has been blocked", "has been locked", "locking your account",
+          "reactivate", "unlock your", "verify your details", "security alert", "account alert",
+          "actividad inusual", "actividad sospechosa", "acceso no autorizado", "cuenta suspendida",
+          "cuenta bloqueada", "acceso a su cuenta"}},
+        {"subscription", "Fake subscription or storage problem",
+         "Messages saying a subscription expired, storage is full, or a payment failed are used to get you to type card details on a fake page.",
+         15,
+         {"your subscription", "has expired", "membership has expired", "renew now", "storage is full",
+          "storage full", "icloud storage", "payment declined", "payment failed", "billing problem",
+          "su suscripcion", "ha caducado", "ha expirado", "fecha de caducidad", "almacenamiento"}},
+        {"freebie", "Offers a free gift or reward",
+         "Free gifts, surveys, and 'rewards' are bait. They lead to pages that collect your details or card number.",
+         15,
+         {"free gift", "little gift", "gift for you", "free watch", "free msg", "free iphone", "free ipad",
+          "free airpods", "airpods", "reward", "rewards", "giveaway", "survey", "exclusive offer",
+          "regalo gratis", "gratis"}},
+        {"wrong-number", "Looks like a 'wrong number' opener",
+         "Strangers who text 'wrong number' or 'long time no see' are starting a conversation that often turns into a romance or investment scam. You do not have to reply.",
+         25,
+         {"wrong number", "dialed the wrong", "dialled the wrong", "long time no see",
+          "it's been a long time", "been a long time", "are you who", "numero equivocado"}},
+        {"job-offer", "Unrealistic job offer",
+         "Easy work-from-home jobs with high pay and no experience are used to collect fees and personal details, or to make you move money for criminals.",
+         20,
+         {"work from home", "part-time job", "part time job", "extra income", "daily salary",
+          "stable income", "no experience", "experience not needed", "earn up to",
+          "trabajo desde casa", "trabajo en casa", "ingresos extra", "sin experiencia", "ganancias diarias"}},
+        {"advance-fee", "Looks like an advance-fee or inheritance scam",
+         "Messages from strangers about money waiting for you, a deceased relative, or a lawyer needing your help are 'advance-fee' scams. You will be asked to pay fees to get money that does not exist.",
+         20,
+         {"next of kin", "beneficiary", "transfer of funds", "late client", "deceased", "barrister",
+          "you have been chosen", "bufete de abogados", "donacion benefica"}},
+        {"money-offer", "Offers easy money, loans, or a payout",
+         "Surprise settlements, government grants, stimulus money, and instant loans are common bait. Real agencies do not text you offers of money.",
+         20,
+         {"stimulus", "american rescue", "government grant", "free government", "settlement",
+          "class action", "treasury department", "installment money", "payday loan", "loan up to",
+          "instant loan", "cash advance", "money up to", "easy loan", "no credit check",
+          "prestamo rapido", "subsidio"}},
+        {"device-alert", "Fake virus or security warning",
+         "Pop-up style warnings about viruses or breached apps are used to scare you into clicking or installing something harmful.",
+         20,
+         {"security breach", "has been infected", "virus detected", "your device has", "malware",
+          "apps have breached", "breached your"}},
+        {"dating-bait", "Dating or photo bait from a stranger",
+         "Messages saying someone sent you pictures or wants to meet are bait to get you to click or start a conversation with a scammer.",
+         20,
+         {"fling", "sent you these pix", "sent you a pic", "sent you some pics", "hookup",
+          "do you remember me", "do you still remember me"}},
     };
     return rules;
 }
@@ -194,11 +286,14 @@ std::vector<std::string> extractPhones(const std::string& text) {
 
 const std::set<std::string> kShorteners = {"bit.ly",  "tinyurl.com", "t.co",   "goo.gl",
                                            "is.gd",   "cutt.ly",     "rb.gy",  "ow.ly",
-                                           "shorturl.at", "tiny.cc", "t.ly"};
+                                           "shorturl.at", "tiny.cc", "t.ly", "rebrand.ly", "b.link", "bl.ink",
+                                           "page.link", "buff.ly", "s.id", "lnkd.in", "clk.sh", "v.gd"};
 
 const std::set<std::string> kRiskyTlds = {"xyz", "top", "click", "icu", "buzz", "live",
                                           "link", "info", "shop", "online", "site", "cc",
-                                          "support", "monster", "rest"};
+                                          "support", "monster", "rest", "cfd", "sbs", "vip", "work", "today",
+                                          "bond", "cyou", "tk", "ml", "ga", "cf", "gq", "pw", "cam",
+                                          "quest", "fun", "lol"};
 
 const std::set<std::string> kCommonTlds = {"com", "net", "org", "us", "co", "io", "me", "app"};
 
@@ -222,7 +317,19 @@ const std::vector<Brand>& brands() {
         {"chase", false, {"chase.com"}},
         {"apple", false, {"apple.com", "icloud.com"}},
         {"irs", false, {"irs.gov"}},
-        {"usps", false, {"usps.com"}},
+        {"usps", true, {"usps.com"}},
+        {"bofa", true, {"bofa.com"}},
+        {"citibank", true, {"citibank.com", "citi.com"}},
+        {"tmobile", true, {"t-mobile.com", "tmobile.com"}},
+        {"homedepot", true, {"homedepot.com"}},
+        {"costco", true, {"costco.com"}},
+        {"walmart", true, {"walmart.com"}},
+        {"navyfederal", true, {"navyfederal.org"}},
+        {"whatsapp", true, {"whatsapp.com"}},
+        {"citi", false, {"citi.com", "citibank.com"}},
+        {"ups", false, {"ups.com"}},
+        {"cvs", false, {"cvs.com"}},
+        {"edd", false, {"edd.ca.gov"}},
         {"fpl", false, {"fpl.com"}},
     };
     return b;
@@ -334,7 +441,7 @@ UrlInfo inspectToken(const std::string& original) {
         if (!mentions) continue;
         bool official = false;
         for (const std::string& dom : brand.official) {
-            if (reg == dom || endsWith(host, "." + dom)) official = true;
+            if (host == dom || reg == dom || endsWith(host, "." + dom)) official = true;
         }
         if (!official) {
             info.flags.push_back(std::string("lookalike:") + brand.name);
@@ -412,11 +519,25 @@ Result analyze(const std::string& message) {
         if (seen.insert(id).second) r.signals.push_back({id, title, why, weight});
     };
 
+    // "password" and similar words appear in plenty of honest emails (password resets, policy
+    // updates). They only count fully when there is also pressure, a threat, or a payment ask.
+    bool wantsCredentials = false;
     for (const TextRule& rule : textRules()) {
         for (const std::string& phrase : rule.phrases) {
-            if (containsWord(lo, phrase)) {
-                add(rule.id, rule.title, rule.explanation, rule.weight);
+            if (containsWord(lo, normalize(phrase))) {
+                if (std::string(rule.id) == "credentials") wantsCredentials = true;
+                else add(rule.id, rule.title, rule.explanation, rule.weight);
                 break;
+            }
+        }
+    }
+    if (wantsCredentials) {
+        const bool pressure = seen.count("urgency") || seen.count("threat") || seen.count("account-alert") ||
+                              seen.count("payment") || seen.count("secrecy") || seen.count("prize") ||
+                              seen.count("delivery-notice");
+        for (const TextRule& rule : textRules()) {
+            if (std::string(rule.id) == "credentials") {
+                add(rule.id, rule.title, rule.explanation, pressure ? rule.weight : 8);
             }
         }
     }
@@ -424,7 +545,7 @@ Result analyze(const std::string& message) {
     r.phones = extractPhones(clipped);
     if (!r.phones.empty()) {
         for (const std::string& phrase : kCallbackPhrases) {
-            if (containsWord(lo, phrase)) {
+            if (containsWord(lo, normalize(phrase))) {
                 add("callback", "Asks you to call a number in the message",
                     "Scammers put their own phone number in the message so you reach them instead of the real company. Look up the official number yourself.",
                     15);
@@ -450,6 +571,22 @@ Result analyze(const std::string& message) {
         }
     }
 
+    // A message that is only a link, with almost no words around it.
+    if (!r.urls.empty()) {
+        std::string rest = clipped;
+        for (const UrlInfo& u : r.urls) {
+            std::size_t at;
+            while ((at = rest.find(u.url)) != std::string::npos) rest.erase(at, u.url.size());
+        }
+        int letters = 0;
+        for (char ch : rest) letters += isAlnumAscii(ch) ? 1 : 0;
+        if (letters < 15) {
+            add("bare-link", "Message is just a link",
+                "A link with almost no explanation is sent to see who will click. Do not open links from people you do not know.",
+                20);
+        }
+    }
+
     // Combinations are much more suspicious than any single sign.
     const bool pressure = seen.count("urgency") || seen.count("threat") || seen.count("secrecy");
     if (seen.count("payment") && pressure) {
@@ -460,6 +597,12 @@ Result analyze(const std::string& message) {
     if (seen.count("credentials") && (seen.count("link-action") || !r.urls.empty())) {
         add("combo-login-link", "Link plus a request for private details",
             "A link combined with a request for codes or passwords is how many accounts get taken over.", 10);
+    }
+
+    if ((seen.count("delivery-notice") || seen.count("account-alert") || seen.count("subscription")) &&
+        !r.urls.empty()) {
+        add("combo-notice-link", "A 'problem' notice plus a link",
+            "Announcing a problem and pushing a link is the standard way scammers steal logins and card numbers.", 10);
     }
 
     std::stable_sort(r.signals.begin(), r.signals.end(),

@@ -49,6 +49,29 @@ Click **Explain with AI** under a result. The server removes phone numbers, emai
 - The key is read from the environment only. Never put it in a file in this repo.
 - `make run` prints whether Claude is enabled at startup.
 
+## How well does it work?
+
+Measured with `tools/evaluate.py` on two public datasets (kept in `data/`, which is not committed):
+
+| Dataset | Result (current rules) | Before the dataset-driven update |
+|---------|------------------------|----------------------------------|
+| Smishtank, 1,062 real US phishing texts | 45% flagged medium or higher, 17% high | 27% / 5% |
+| SpaPhish, 731 phishing + 664 legitimate Spanish emails | catches 51% of phishing, wrongly flags 9% of legitimate | 19% / 8% |
+
+How to read this: these are honest first numbers, not a finished detector.
+- The rules were improved by studying these same datasets, so the numbers are optimistic. The next step is testing on new, unseen messages.
+- Smishtank has only scam messages, so it cannot measure false alarms on English texts. SpaPhish is email, not SMS.
+- Nothing public was found for Haitian Creole. Creole rules are a small starter set and need review by a native speaker.
+
+```bash
+cd backend && make scorer && cd ..
+python3 tools/evaluate.py
+```
+
+Data sources (see `data/README.md`):
+- Smishtank dataset (Timko and Rahman, [arXiv:2402.18430](https://arxiv.org/abs/2402.18430), [smishtank.com](https://smishtank.com)).
+- SpaPhish: Spanish phishing and legitimate email dataset, CC BY 4.0 ([Mendeley Data](https://data.mendeley.com/datasets/hz2d6gz7pc)).
+
 ## Project layout
 
 ```
@@ -60,13 +83,15 @@ backend/
   tests/              unit tests (make test)
   third_party/        cpp-httplib and nlohmann/json (single headers, MIT)
 frontend/             React app (Vite)
+tools/                evaluation script and helper (tools/evaluate.py)
+data/                 public datasets for evaluation (not committed)
 docs/SECURITY.md      threat model and security checklist
 ```
 
 ## Roadmap
 
-1. Collect real examples from family and friends (with permission, names removed) and turn them into test cases.
-2. Add more Haitian Creole and Spanish phrases and a language toggle in the UI.
+1. Collect real examples from family and friends (with permission, names removed) and test on messages the rules have never seen.
+2. Native-speaker review and more Haitian Creole and Spanish phrases, plus a language toggle in the UI.
 3. Have Haitian Creole and Spanish speakers review the AI explanations; add a Creole/Spanish interface.
 4. Accounts with two roles: the person being protected and a trusted family helper who sees flagged messages.
 5. Encrypted storage for history, plus consent controls and delete-my-data.

@@ -27,7 +27,7 @@ endif
 BUILD = build
 SRC   = src/analyzer.cpp src/redact.cpp src/explainer.cpp
 
-.PHONY: all server test run clean
+.PHONY: all server test run scorer clean
 
 all: server
 
@@ -44,6 +44,9 @@ test: $(BUILD)
 	./$(BUILD)/test-analyzer
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SSL_FLAGS) tests/test_ai.cpp $(SRC) -o $(BUILD)/test-ai $(LDFLAGS) $(SSL_LDFLAGS)
 	./$(BUILD)/test-ai
+
+scorer: $(BUILD)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) ../tools/scorer.cpp src/analyzer.cpp -o $(BUILD)/scorer
 
 run: server
 	./$(BUILD)/scamshield-server

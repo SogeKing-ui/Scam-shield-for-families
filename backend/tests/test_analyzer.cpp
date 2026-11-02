@@ -93,6 +93,41 @@ int main() {
         CHECK(r.score == 0);
     }
 
+    {  // Fake delivery notice with a look-alike link (pattern seen in real smishing)
+        Result r = analyze("[Postal Service] - Due to address is incorrect. The package cannot be delivered, "
+                           "please follow the link to update the correct address. https://upspups.com");
+        CHECK(has(r, "delivery-notice"));
+        CHECK(has(r, "combo-notice-link"));
+        CHECK(r.level != Level::Low);
+    }
+    {  // Fake bank alert
+        Result r = analyze("CITI Alerts - We have blocked access to your debit card due to unusual activity. "
+                           "Verify your details at citi-actvity.org");
+        CHECK(has(r, "account-alert"));
+        CHECK(has(r, "url-lookalike"));
+        CHECK(r.level != Level::Low);
+    }
+    {  // Accented Spanish text matches unaccented rules
+        Result r = analyze("Su contrase\xC3\xB1" "a ser\xC3\xA1 eliminada. Env\xC3\xAD" "e su c\xC3\xB3" "digo de verificaci\xC3\xB3n inmediatamente.");
+        CHECK(has(r, "credentials"));
+        CHECK(has(r, "urgency"));
+    }
+    {  // Wrong-number opener and bare link
+        CHECK(has(analyze("Sorry, wrong number! I thought you were my friend."), "wrong-number"));
+        Result r = analyze("https://rebrand.ly/grppwwr AVOI6Y");
+        CHECK(has(r, "bare-link"));
+        CHECK(has(r, "url-shortener"));
+    }
+    {  // Honest messages stay low
+        CHECK(analyze("You requested to reset your password. If this wasn't you, ignore this email.").level == Level::Low);
+        CHECK(analyze("Your order has shipped and will arrive Thursday. Track it in the app.").level == Level::Low);
+    }
+    {  // Password mention alone is weak; with pressure it is strong
+        Result weak = analyze("Update: we changed our password policy.");
+        Result strong = analyze("URGENT: send your password now or your account will be suspended.");
+        CHECK(strong.score > weak.score + 20);
+    }
+
     std::cout << (checks - failures) << "/" << checks << " checks passed" << std::endl;
     return failures == 0 ? 0 : 1;
 }

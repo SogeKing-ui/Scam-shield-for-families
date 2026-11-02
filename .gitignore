@@ -18,3 +18,7 @@ frontend/dist/
 
 # Vite temp files
 *.timestamp-*.mjs
+
+# Downloaded research datasets (licenses vary; do not commit)
+data/*
+!data/README.md
