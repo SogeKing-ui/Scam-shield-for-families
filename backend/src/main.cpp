@@ -1,10 +1,13 @@
 // Scam Shield API server.
 //   POST /api/analyze   {"text": "..."}  ->  analysis JSON
+//   POST /api/explain   {"text": "...", "language": "en|es|ht", "consent": true}  ->  explanation JSON
 //   GET  /api/health
 //
 // Security choices (see docs/SECURITY.md):
 //  - binds to 127.0.0.1 only by default
 //  - message text is never written to disk or logs
+//  - the AI explanation only runs with explicit consent, on a redacted copy
+//  - the API key is read from the environment and never logged
 //  - request size, input length, and per-client request rate are limited
 //  - strict response headers; CORS only for the configured frontend origin
 #include <chrono>
@@ -15,6 +18,7 @@
 #include <unordered_map>
 
 #include "analyzer.hpp"
+#include "explainer.hpp"
 #include "httplib.h"
 #include "json.hpp"
 
@@ -91,7 +95,9 @@ int main() {
     const int port = std::atoi(envOr("SCAMSHIELD_PORT", "8080").c_str());
     const std::string allowedOrigin = envOr("SCAMSHIELD_ORIGIN", "http://localhost:5173");
 
-    RateLimiter limiter(30.0);  // 30 analyses per minute per client
+    RateLimiter limiter(30.0);         // 30 analyses per minute per client
+    RateLimiter explainLimiter(10.0);  // AI calls cost money: 10 per minute per client
+    const scamshield::ExplainerConfig explainer = scamshield::configFromEnv();
     httplib::Server svr;
 
     svr.set_payload_max_length(16 * 1024);
@@ -111,7 +117,7 @@ int main() {
         }
     };
 
-    svr.Options("/api/analyze", [&](const httplib::Request& req, httplib::Response& res) {
+    svr.Options(R"(/api/(analyze|explain))", [&](const httplib::Request& req, httplib::Response& res) {
         cors(req, res);
         res.set_header("Access-Control-Allow-Methods", "POST, OPTIONS");
         res.set_header("Access-Control-Allow-Headers", "Content-Type");
@@ -141,6 +147,43 @@ int main() {
         res.set_content(toJson(scamshield::analyze(text)).dump(), "application/json");
     });
 
+    svr.Post("/api/explain", [&](const httplib::Request& req, httplib::Response& res) {
+        cors(req, res);
+        if (!explainLimiter.allow(req.remote_addr)) {
+            res.set_header("Retry-After", "30");
+            return error(res, 429, "Too many requests. Please wait a moment and try again.");
+        }
+        json body = json::parse(req.body, nullptr, /*allow_exceptions=*/false);
+        if (body.is_discarded() || !body.is_object() || !body.contains("text") || !body["text"].is_string()) {
+            return error(res, 400, "Send JSON like {\"text\": \"the message\", \"consent\": true}.");
+        }
+        if (!body.contains("consent") || body["consent"] != true) {
+            return error(res, 400, "Consent is required before a message is sent to an AI service.");
+        }
+        const std::string lang = body.contains("language") && body["language"].is_string()
+                                     ? body["language"].get<std::string>()
+                                     : "en";
+        if (!scamshield::isSupportedLanguage(lang)) return error(res, 400, "Unsupported language.");
+        const std::string text = body["text"].get<std::string>();
+        if (text.empty()) return error(res, 400, "The message is empty.");
+        if (text.size() > scamshield::kMaxChars) {
+            return error(res, 413, "That message is too long. Please paste up to 5000 characters.");
+        }
+        const scamshield::Explanation ex = scamshield::explain(explainer, text, lang);
+        res.set_content(
+            json{{"text", ex.text}, {"source", ex.source}, {"model", ex.model}, {"note", ex.note}}.dump(),
+            "application/json");
+    });
+
+    if (explainer.apiKey.empty()) {
+        std::cout << "AI explanations: built-in only (set ANTHROPIC_API_KEY to use Claude)" << std::endl;
+    } else if (!scamshield::sslAvailable() && explainer.baseUrl.rfind("https://", 0) == 0) {
+        std::cout << "AI explanations: key found, but this build has no HTTPS support. "
+                     "Install OpenSSL and rebuild (see README). Using built-in explanations."
+                  << std::endl;
+    } else {
+        std::cout << "AI explanations: Claude (" << explainer.model << ")" << std::endl;
+    }
     std::cout << "Scam Shield API listening on http://" << host << ":" << port << std::endl;
     if (!svr.listen(host, port)) {
         std::cerr << "Could not start server on " << host << ":" << port << std::endl;

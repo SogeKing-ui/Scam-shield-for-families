@@ -44,11 +44,37 @@ export default function App() {
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [language, setLanguage] = useState('en')
+  const [explanation, setExplanation] = useState(null)
+  const [explaining, setExplaining] = useState(false)
+  const [explainError, setExplainError] = useState('')
+
+  async function explain() {
+    setExplainError('')
+    setExplanation(null)
+    setExplaining(true)
+    try {
+      const res = await fetch('/api/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, language, consent: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.')
+      setExplanation(data)
+    } catch (err) {
+      setExplainError(err.message === 'Failed to fetch' ? 'Cannot reach the checker. Is the server running?' : err.message)
+    } finally {
+      setExplaining(false)
+    }
+  }
 
   async function check(e) {
     e.preventDefault()
     setError('')
     setResult(null)
+    setExplanation(null)
+    setExplainError('')
     if (!text.trim()) {
       setError('Please paste a message first.')
       return
@@ -94,7 +120,7 @@ export default function App() {
           <div className="examples">
             <span>Try an example:</span>
             {EXAMPLES.map((ex) => (
-              <button type="button" className="link" key={ex.label} onClick={() => { setText(ex.text); setResult(null); setError('') }}>
+              <button type="button" className="link" key={ex.label} onClick={() => { setText(ex.text); setResult(null); setError(''); setExplanation(null); setExplainError('') }}>
                 {ex.label}
               </button>
             ))}
@@ -117,6 +143,35 @@ export default function App() {
               <div style={{ width: `${result.score}%` }} />
             </div>
             <p>{level.advice}</p>
+          </div>
+
+          <div className="explain">
+            <h3>Explain it in simple words</h3>
+            <div className="explain-controls">
+              <label htmlFor="lang">Language</label>
+              <select id="lang" value={language} onChange={(e) => setLanguage(e.target.value)}>
+                <option value="en">English</option>
+                <option value="es">Español</option>
+                <option value="ht">Kreyòl ayisyen</option>
+              </select>
+              <button type="button" className="secondary" onClick={explain} disabled={explaining}>
+                {explaining ? 'Writing…' : 'Explain with AI'}
+              </button>
+            </div>
+            <p className="privacy">
+              This sends a copy of your message to an AI service (Claude). Phone numbers, emails, and long numbers are
+              removed first, but names are not, so avoid pasting names.
+            </p>
+            {explainError && <p role="alert" className="error">{explainError}</p>}
+            {explanation && (
+              <div className="explanation" aria-live="polite">
+                <p>{explanation.text}</p>
+                <p className="source">
+                  {explanation.source === 'claude' ? 'Written by AI (Claude). It can make mistakes.' : 'Built-in explanation.'}
+                  {explanation.note ? ` ${explanation.note}` : ''}
+                </p>
+              </div>
+            )}
           </div>
 
           {result.signals.length > 0 && (
